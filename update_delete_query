@@ -1,0 +1,27 @@
+--Запрос 1
+--Изменить капитана 10 совершающего рейсы с 09.10.2023 по 01.11.2023, на капитана 1
+UPDATE visit SET id_cap = 1 WHERE id_cap = 10 AND date_departure >= '2023-10-09' AND date_departure <= '2023-11-01';
+
+
+--Запрос 2
+--Изменить судно, совершившее рейс 12
+UPDATE visit SET id_ship = 17 WHERE id = 12;
+
+
+--Запрос 3
+--Удалить всех капитанов, которые не совершали рейсов в 2023 году
+
+DELETE FROM cap
+WHERE id_cap NOT IN (
+  SELECT DISTINCT cap.id_cap
+  FROM cap
+  JOIN visit ON cap.id_cap = visit.id_cap
+  WHERE EXTRACT(YEAR FROM visit.date_departure) = 2023
+);
+
+
+--Запрос 4
+--Удалить все судна, с максимальным весом перевозимых грузов менее 100000 тонн
+
+DELETE FROM ship
+WHERE max_weight < 100000

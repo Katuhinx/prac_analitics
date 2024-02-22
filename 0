@@ -1,0 +1,107 @@
+
+SET search_path=analitics;
+
+--Функция, которая выдаёт расписание  рейсов  для определенных кораблей
+CREATE OR REPLACE FUNCTION ship_departure_visit(ship integer) RETURNS table(departure timestamp, city jsonb) AS $$
+DECLARE
+    curs CURSOR FOR SELECT * FROM visit;
+    exist bool = FALSE;
+BEGIN
+    FOR r in curs LOOP
+        IF r.id_ship = $1 THEN
+            RETURN QUERY SELECT  r.date_departure, r.port_departure;
+            exist = TRUE;
+        END IF;
+    END LOOP;
+    IF NOT exist THEN
+        RAISE EXCEPTION 'Неправильный номер корабля или расписание еще не вбиты в систему.';
+    END IF;
+    RETURN;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT * FROM ship_departure_visit('5') ORDER BY departure;
+SELECT * FROM ship_departure_visit('10000000');
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------
+--функция, которая выдает, какое количество и какого груза было привезено  определенным кораблем
+
+CREATE OR REPLACE FUNCTION product_year(ship integer, year integer) RETURNS table(product text, weight bigint) AS $$
+DECLARE
+	curs CURSOR FOR SELECT * FROM visit JOIN cargo ON visit.id = cargo.id_visit WHERE (ship = visit.id_ship) AND (year = year_arrival);
+    exist bool = FALSE;
+	
+BEGIN
+    FOR r in curs LOOP
+   
+            RETURN QUERY SELECT r.name_product, SUM((r.data_product -> 'weight')::int) GROUP BY r.name_product;
+            exist = TRUE;
+       
+    END LOOP;
+    IF NOT exist THEN
+        RAISE EXCEPTION 'Либо вам ничего не привозили в этом году, либо вы дали неправильную информацию о себе';
+    END IF;
+    RETURN;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT * FROM product_year(627697, 2014);
+SELECT * FROM visit LIMIT 10 JOIN cargo ON visit.id = cargo.id_visit  WHERE name_product = 'Продукт 215033' LIMIT 100
+
+INSERT INTO cargo ( id_visit, category_product, name_product, data_product)
+VALUES (1,' Автомобили', 'Продукт 215033', '{"weight" :20000000}')
+
+
+--SELECT data_product, ((data_product -> 'weight')::text ~ '^[0-9]+$') as is_int FROM cargo WHERE name_product = 'Продукт 215033';
+
+-- порт, год, товар, вес
+--Специально вставила строку, в которой вес не интовский 
+
+INSERT INTO cargo ( id_visit, category_product, name_product, data_product)
+VALUES (1,' Автомобили', 'Продукт 215033', '{"weight" :"mnogo"}')
+
+-- в представлении проверка на то, чтоб вес был типа инт 
+
+CREATE OR REPLACE VIEW weight_product AS
+SELECT (SELECT * FROM jsonb_to_record (visit.port_departure) AS x(city text)), 
+		(SELECT * FROM jsonb_to_record (visit.port_departure) AS x(port text)), 
+		year_departure, name_product,(SELECT * FROM jsonb_to_record (cargo.data_product) AS x(weight integer))
+		FROM visit JOIN cargo ON visit.id = cargo.id_visit 
+		WHERE data_product -> 'weight' IS NOT NULL AND  (data_product -> 'weight')::text ~ '^[0-9]+$';
+
+
+SELECT * FROM weight_product;
+		
+				
+CREATE OR REPLACE FUNCTION port_statistik ( city_1 text, port_1 text, year integer, product text) RETURNS  integer  AS $$
+
+	DECLARE 
+		curs CURSOR FOR SELECT weight FROM weight_product WHERE (city_1 = city) AND (port_1 = port) 	AND (year = year_departure) AND (product = name_product);
+		sum integer;
+				
+		BEGIN
+			sum = 0;
+			FOR r IN curs LOOP
+			IF 	pg_typeof(r.weight) <> pg_typeof(1) THEN UPDATE weight_product SET r.weight = 0;
+			END IF;
+			sum = sum + r.weight;
+			
+    		END LOOP;
+		RETURN  (sum);
+
+		END;
+$$
+LANGUAGE plpgsql;
+
+
+-- считаем сумму
+			
+SELECT * FROM port_statistik('Fuzhou', 'port 3', 2014,'Продукт 215033');
+
+--делаем проверку, текстовой строчки в нашем представлении нет, мы бы с ней как раз не смогли бы посчитать сумму
+
+SELECT * FROM weight_product WHERE name_product = 'Продукт 215033' AND city = 'Fuzhou'

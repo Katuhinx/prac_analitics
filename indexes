@@ -1,0 +1,179 @@
+SELECT *
+FROM pg_indexes
+WHERE schemaname = 'public';
+
+DROP  INDEX idx_port_arrival,idx_port_departure,json_index_departure, json_index_arrival,text_index,array_team_index,array_index
+DROP TABLE visit_sections;
+
+--массив 
+
+EXPLAIN ANALYZE SELECT * FROM ship WHERE ARRAY['VADIM ERMAKOV']::text[] <@ team;
+
+/*
+"Gather  (cost=1000.00..78499.03 rows=2817 width=535) (actual time=0.239..1215.704 rows=5149 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Parallel Seq Scan on ship  (cost=0.00..77217.33 rows=1174 width=535) (actual time=1.347..1167.753 rows=1716 loops=3)"
+"        Filter: ('{""VADIM ERMAKOV""}'::text[] <@ team)"
+"        Rows Removed by Filter: 331617"
+"Planning Time: 0.256 ms"
+"Execution Time: 1216.443 ms"
+*/
+
+CREATE INDEX array_index ON ship USING GIN(team);
+
+EXPLAIN ANALYZE SELECT * FROM ship WHERE ARRAY['OLEG LAPIN']::text[] <@ team;
+
+/*
+"Bitmap Heap Scan on ship  (cost=39.98..9503.52 rows=2817 width=535) (actual time=2.361..105.144 rows=5394 loops=1)"
+"  Recheck Cond: ('{""OLEG LAPIN""}'::text[] <@ team)"
+"  Heap Blocks: exact=5177"
+"  ->  Bitmap Index Scan on array_index  (cost=0.00..39.28 rows=2817 width=0) (actual time=0.842..0.843 rows=5394 loops=1)"
+"        Index Cond: (team @> '{""OLEG LAPIN""}'::text[])"
+"Planning Time: 0.308 ms"
+"Execution Time: 105.467 ms"
+*/
+
+--json
+
+EXPLAIN ANALYZE SELECT port_arrival -> 'city' AS city, port_arrival -> 'port' AS port, COUNT(id_ship)
+FROM visit 
+WHERE port_arrival @> '{"city":"Murmansk"}'::jsonb AND year_arrival = EXTRACT(YEAR FROM CURRENT_DATE)
+	GROUP BY city,port,year_arrival
+	ORDER BY city, year_arrival;
+	
+/*
+"              ->  Sort  (cost=35695.22..35695.24 rows=10 width=72) (actual time=444.126..444.131 rows=114 loops=3)"
+"                    Sort Key: ((port_arrival -> 'city'::text)), year_arrival, ((port_arrival -> 'port'::text))"
+"                    Sort Method: quicksort  Memory: 33kB"
+"                    Worker 0:  Sort Method: quicksort  Memory: 31kB"
+"                    Worker 1:  Sort Method: quicksort  Memory: 31kB"
+"                    ->  Parallel Seq Scan on visit  (cost=0.00..35695.05 rows=10 width=72) (actual time=4.268..443.432 rows=114 loops=3)"
+"                          Filter: ((port_arrival @> '{""city"": ""Murmansk""}'::jsonb) AND ((year_arrival)::numeric = EXTRACT(year FROM CURRENT_DATE)))"
+"                          Rows Removed by Filter: 333219"
+"Planning Time: 4.468 ms"
+"Execution Time: 458.980 ms"
+*/
+
+CREATE INDEX json_index_arrival ON visit USING GIN(port_arrival);
+
+EXPLAIN ANALYZE SELECT port_arrival -> 'city' AS city, port_arrival -> 'port' AS port, COUNT(id_ship)
+FROM visit 
+WHERE port_arrival @> '{"city":"Murmansk"}'::jsonb AND year_arrival = EXTRACT(YEAR FROM CURRENT_DATE)
+	GROUP BY city,port,year_arrival
+	ORDER BY city, year_arrival;
+	
+/*
+"        Sort Method: quicksort  Memory: 46kB"
+"        ->  Bitmap Heap Scan on visit  (cost=110.01..11972.82 rows=23 width=72) (actual time=4.798..29.002 rows=342 loops=1)"
+"              Recheck Cond: (port_arrival @> '{""city"": ""Murmansk""}'::jsonb)"
+"              Filter: ((year_arrival)::numeric = EXTRACT(year FROM CURRENT_DATE))"
+"              Rows Removed by Filter: 7162"
+"              Heap Blocks: exact=6563"
+"              ->  Bitmap Index Scan on json_index_arrival  (cost=0.00..110.00 rows=4560 width=0) (actual time=4.103..4.104 rows=7504 loops=1)"
+"                    Index Cond: (port_arrival @> '{""city"": ""Murmansk""}'::jsonb)"
+"Planning Time: 0.220 ms"
+"Execution Time: 29.567 ms"
+*/
+
+--несколько таблиц и несколько полей
+
+EXPLAIN ANALYZE SELECT port_departure -> 'city' AS city, name_product, SUM((data_product -> 'weight')::int) as weight
+FROM visit JOIN cargo ON visit.id=cargo.id_visit 
+WHERE port_departure @> '{"city":"Murmansk"}'::jsonb AND year_departure = EXTRACT(YEAR FROM CURRENT_DATE) - 1
+	GROUP BY name_product, port_departure, year_departure
+	ORDER BY city,year_departure;
+	
+/*
+"                                      Buckets: 1024  Batches: 1  Memory Usage: 104kB"
+"                                      ->  Parallel Seq Scan on visit  (cost=0.00..36736.67 rows=19 width=71) (actual time=438.830..534.622 rows=105 loops=3)"
+"                                            Filter: ((port_departure @> '{""city"": ""Murmansk""}'::jsonb) AND ((year_departure)::numeric = (EXTRACT(year FROM CURRENT_DATE) - '1'::numeric)))"
+"                                            Rows Removed by Filter: 333229"
+"Planning Time: 5.073 ms"
+"JIT:"
+"  Functions: 57"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 7.438 ms, Inlining 364.542 ms, Optimization 612.772 ms, Emission 336.970 ms, Total 1321.722 ms"
+"Execution Time: 4373.645 ms"
+*/
+
+CREATE INDEX json_index_departure ON visit(port_departure, year_departure);
+
+EXPLAIN ANALYZE SELECT port_departure -> 'city' AS city, name_product, SUM((data_product -> 'weight')::int) as weight
+FROM visit JOIN cargo ON visit.id=cargo.id_visit 
+WHERE port_departure @> '{"city":"Murmansk"}'::jsonb AND year_departure = EXTRACT(YEAR FROM CURRENT_DATE) - 1
+	GROUP BY name_product, port_departure, year_departure
+	ORDER BY city,year_departure;
+
+/*
+"Sort  (cost=541232.34..541234.59 rows=900 width=128) (actual time=5095.789..5183.809 rows=6308 loops=1)"
+"  Sort Key: ((visit.port_departure -> 'city'::text)), visit.year_departure"
+"  Sort Method: quicksort  Memory: 1080kB"
+"  ->  Finalize GroupAggregate  (cost=541072.54..541188.17 rows=900 width=128) (actual time=5080.311..5181.047 rows=6308 loops=1)"
+"        Group Key: cargo.name_product, visit.port_departure, visit.year_departure"
+"        ->  Gather Merge  (cost=541072.54..541169.42 rows=750 width=96) (actual time=5079.662..5175.190 rows=6312 loops=1)"
+"              Workers Planned: 2"
+"              Workers Launched: 2"
+"              ->  Partial GroupAggregate  (cost=540072.52..540082.83 rows=375 width=96) (actual time=4946.731..4949.768 rows=2104 loops=3)"
+"                    Group Key: cargo.name_product, visit.port_departure, visit.year_departure"
+"                    ->  Sort  (cost=540072.52..540073.46 rows=375 width=161) (actual time=4946.468..4947.037 rows=2105 loops=3)"
+"                          Sort Key: cargo.name_product, visit.port_departure, visit.year_departure"
+"                          Sort Method: quicksort  Memory: 420kB"
+"                          Worker 0:  Sort Method: quicksort  Memory: 580kB"
+"                          Worker 1:  Sort Method: quicksort  Memory: 399kB"
+"                          ->  Parallel Hash Join  (cost=36736.90..540056.49 rows=375 width=161) (actual time=1124.650..4936.458 rows=2105 loops=3)"
+"                                Hash Cond: (cargo.id_visit = visit.id)"
+"                                ->  Parallel Seq Scan on cargo  (cost=0.00..481444.67 rows=8333267 width=98) (actual time=0.641..3370.711 rows=6666613 loops=3)"
+"                                ->  Parallel Hash  (cost=36736.67..36736.67 rows=19 width=71) (actual time=1063.969..1063.976 rows=105 loops=3)"
+"                                      Buckets: 1024  Batches: 1  Memory Usage: 104kB"
+"                                      ->  Parallel Seq Scan on visit  (cost=0.00..36736.67 rows=19 width=71) (actual time=419.201..1063.418 rows=105 loops=3)"
+"                                            Filter: ((port_departure @> '{""city"": ""Murmansk""}'::jsonb) AND ((year_departure)::numeric = (EXTRACT(year FROM CURRENT_DATE) - '1'::numeric)))"
+"                                            Rows Removed by Filter: 333229"
+"Planning Time: 1.926 ms"
+"JIT:"
+"  Functions: 57"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 6.474 ms, Inlining 370.252 ms, Optimization 521.918 ms, Emission 314.418 ms, Total 1213.063 ms"
+"Execution Time: 5189.402 ms"
+*/
+
+--секционирование
+
+EXPLAIN ANALYZE SELECT * FROM visit WHERE season_departure = 1;
+
+/*
+"Seq Scan on visit  (cost=0.00..38820.00 rows=249267 width=166) (actual time=1.180..604.982 rows=250685 loops=1)"
+"  Filter: (season_departure = 1)"
+"  Rows Removed by Filter: 749315"
+"Planning Time: 6.590 ms"
+"Execution Time: 612.295 ms"
+*/
+
+CREATE TABLE visit_sections (
+  id integer NOT NULL,
+  port_departure JSONB NOT NULL,
+  date_departure timestamp DEFAULT localtimestamp NOT NULL,
+  year_departure int NOT NULL,
+  season_departure varchar(6) NOT NULL,
+  port_arrival JSONB NOT NULL,
+  date_arrival timestamp NOT NULL,
+  year_arrival int NOT NULL,
+  season_arrival varchar(6) NOT NULL,
+  id_ship int REFERENCES Ship(id) NOT NULL,
+  PRIMARY KEY (id, season_departure)
+) PARTITION BY RANGE (season_departure);
+
+CREATE TABLE winter_visit PARTITION OF visit_sections
+    FOR VALUES FROM (1) TO (2);
+
+CREATE TABLE spring_visit PARTITION OF visit_sections
+    FOR VALUES FROM (2) TO (3);
+
+CREATE TABLE summer_visit PARTITION OF visit_sections
+    FOR VALUES FROM (3) TO (4);
+
+CREATE TABLE autumn_visit PARTITION OF visit_sections
+    FOR VALUES FROM (4) TO (5);
+
+INSERT INTO visit_sections(id, port_departure, date_departure, year_departure, port_arrival, date_arrival, year_arrival, id_ship, season_departure, season_arrival)
+SELECT * FROM visit;

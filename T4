@@ -1,0 +1,21 @@
+--2
+
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+BEGIN TRANSACTION;--4
+
+SELECT id_cap, experience FROM Cap;--8
+
+COMMIT;
+
+-------------------------------------------------
+
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+BEGIN TRANSACTION;
+
+SELECT * FROM Vis;
+		
+
+	
+COMMIT;	

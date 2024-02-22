@@ -1,0 +1,21 @@
+CREATE OR REPLACE FUNCTION check_cargo_weight()
+RETURNS TRIGGER AS $$
+DECLARE
+ total_weight REAL;
+BEGIN
+	IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
+ 		SELECT SUM(weight) + NEW.weight INTO total_weight FROM Cargo WHERE id_visit = NEW.id_visit;
+  
+ 		IF total_weight > (SELECT max_weight FROM Ship WHERE id = (SELECT id_ship FROM visit WHERE id = NEW.id_visit)) THEN
+    		RAISE EXCEPTION 'Вес груза превышает максимальную вместимость судна';
+			ROLLBACK;
+ 		END IF;
+  	END IF;
+ 	RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER cargo_weight_check
+BEFORE INSERT OR UPDATE ON Cargo
+FOR EACH ROW
+EXECUTE PROCEDURE check_cargo_weight();

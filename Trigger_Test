@@ -1,0 +1,6 @@
+BEGIN;
+INSERT INTO Cargo(id_visit, id_product, weight) VALUES(14, 10, 15000.0);
+COMMIT;
+ROLLBACK;
+
+SELECT id, id_visit, id_product, weight FROM public.cargo;

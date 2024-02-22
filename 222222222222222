@@ -1,0 +1,36 @@
+--2
+
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+BEGIN TRANSACTION;--4
+
+SELECT id_cap, experience FROM Cap;--8
+
+COMMIT;
+
+-------------------------------------------------
+
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+BEGIN TRANSACTION;
+
+SELECT * FROM Vis;
+		
+
+	
+COMMIT;	
+
+-----2
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+BEGIN TRANSACTION;
+
+SELECT * FROM Prod;
+
+SELECT SUM(weight) FROM Prod WHERE id_visit='3';
+
+INSERT INTO Prod (id_visit,name,weight)
+	VALUES
+		('1','одежда',150);
+
+COMMIT;

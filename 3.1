@@ -1,0 +1,154 @@
+CREATE SCHEMA analitics;
+
+SET search_path=analitics;
+
+CREATE TYPE berth_t AS ENUM ('пирс', 'набережная','плавучий');
+
+
+CREATE TABLE Country(
+	id SERIAL PRIMARY KEY,
+	name varchar(100) NOT NULL
+);
+
+INSERT INTO Country (name) VALUES
+	('Россия'),
+	('Турция'),
+	('Индия'),
+	('Великобритания'),
+	('США'),
+	('Китай'),
+	('Канада'),
+	('Бельгия'),
+	('Япония'),
+	('Мексика');
+	
+
+CREATE TABLE City(
+	id SERIAL PRIMARY KEY,
+	name varchar(100) NOT NULL
+);
+
+INSERT INTO City (name) VALUES
+	('Новороссийск'),
+	('Ростов-Главный'),
+	('Шанхай'),
+	('Балтимор'),
+	('Тилбери'),
+	('Лос-Анджелес'),
+	('Чивань'),
+	('Мерсин'),
+	('Пипавав'),
+	('Стамбул'),
+	('Калининград'),
+	('Владивосток'),
+	('Магадан'),
+	('Фучжоу'),
+	('Архангельск'),
+	('Мандра'),
+	('Ленинград'),
+	('Астрахань'),
+	('Мурманск'),
+	('Анадырь');
+	
+
+
+CREATE TABLE Port (
+  id SERIAL PRIMARY KEY,
+  name varchar(100) NOT NULL,
+  id_city int REFERENCES City(id) NOT NULL,
+  id_country int REFERENCES Country(id) NOT NULL
+);
+
+
+INSERT INTO Port( name,id_city,id_country) 
+VALUES 
+	('Новороссийск',1, 1),
+	('Ростов-Главный',2,1),
+	('Калининград',11,1),
+	('Ленинград',17,1),
+	('Астрахань',18,1),
+	('Магадан',13,1),
+	('Владивосток',12,1),
+	('Северный',19,1),
+	('Архангельск',15,1),
+	('Анадырь',20,1),
+	('Шанхай',3,6),
+	('Чивань',7,6),
+	('Фучжоу',14,6),
+	('Мерсин',8,2),
+	('Стамбул',10,2),
+	('Мандра',16,3),
+	('Пипавав',9,3),
+	('Тилбери',5,4),
+	('Балтимор',4,5),
+	('Лос-Анджелес',6,5);
+	
+
+CREATE TABLE Berth (
+  id SERIAL PRIMARY KEY,
+  id_port int REFERENCES Port (id) ON DELETE CASCADE,
+  name varchar(100) NOT NULL,
+  type berth_t NOT NULL
+);
+
+INSERT INTO Berth (id_port,name,type)VALUES 
+	('1','7 футов','пирс'),
+	('1','мореа','пирс'),
+	('1','1 выгрузной','набережная'),
+	('1','2 выгрузной','плавучий'),
+	('1','3 выгрузной','пирс'),
+	('19','виктори','пирс'),
+	('19','аве мариа','плавучий'),
+	('11','си ма ри','плавучий'),
+	('11','витторе','пирс'),
+	('11','жин чу','пирс'),
+	('3','северный','пирс'),
+	('3','южный','пирс'),
+	('3','первый','плавучий'),
+	('15','фиш','пирс'),
+	('15','айс дэй','набережная'),
+	('7','им.Седова','пирс'),
+	('7','им.Юнги','плавучий'),
+	('17','трэвэл','плавучий'),
+	('17','инфинити','плавучий'),
+	('17','девелоп','пирс');
+	
+
+CREATE TABLE Ship (
+  id SERIAL PRIMARY KEY ,
+  data_ship text[] NOT NULL,
+  max_weight real NOT NULL CONSTRAINT positive_max_weight CHECK (max_weight>0),
+  max_stock int NOT NULL
+);
+
+COPY Ship (max_weight, max_stock, data_ship) FROM '/tmp/db_tables_csv/ship.csv' DELIMITER ',' CSV;
+
+CREATE TABLE Visit (
+  id SERIAL PRIMARY KEY,
+  id_berth_departure int REFERENCES Berth(id) NOT NULL,
+  date_departure timestamp DEFAULT localtimestamp NOT NULL,
+  id_berth_arrival int REFERENCES Berth(id) NOT NULL,
+  date_arrival timestamp NOT NULL,
+  id_ship int REFERENCES Ship(id) NOT NULL
+);
+
+COPY Visit (id_berth_departure, date_departure, id_berth_arrival, date_arrival, id_ship) FROM '/tmp/db_tables_csv/visit.csv' DELIMITER ',' CSV;
+
+
+CREATE TABLE Product (
+  id SERIAL PRIMARY KEY,
+  name text NOT NULL
+);
+	
+COPY Product (name) FROM '/tmp/db_tables_csv/product.csv' DELIMITER ',' CSV;
+DROP TABLE Cargo
+
+CREATE TABLE Cargo (
+  id SERIAL PRIMARY KEY,
+  id_visit int REFERENCES Visit(id) NOT NULL,
+  data_product JSONB NOT NULL
+);
+
+COPY Cargo (id_visit, data_product) FROM '/tmp/db_tables_csv/cargo.csv' DELIMITER ',' CSV;
+	
+	

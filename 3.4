@@ -1,0 +1,71 @@
+SELECT *
+FROM pg_indexes
+WHERE schemaname = 'public';
+
+--Какое количество кораблей приплывало в определенный город за текущий год(проходимость порта)
+EXPLAIN ANALYZE SELECT port_arrival -> 'city' AS city, port_arrival -> 'port' AS port, COUNT(id_ship)
+FROM visit 
+WHERE port_arrival @> '{"city":"Murmansk"}'::jsonb AND year_arrival = EXTRACT(YEAR FROM CURRENT_DATE)
+	GROUP BY city,port,year_arrival
+	ORDER BY city, year_arrival;
+			
+-- Какое каличество и какого продукта было экспортировано из определенного города за прошлый год
+EXPLAIN ANALYZE SELECT port_departure -> 'city' AS city, name_product, SUM((data_product -> 'weight')::int) as weight
+FROM visit JOIN cargo ON visit.id=cargo.id_visit 
+WHERE port_departure @> '{"city":"Murmansk"}'::jsonb AND year_departure = EXTRACT(YEAR FROM CURRENT_DATE) - 1
+	GROUP BY name_product, port_departure, year_departure
+	ORDER BY city,year_departure;
+	
+	
+	
+CREATE INDEX idx_port_arrival ON visit (port_arrival, year_arrival);
+CREATE INDEX idx_port_departure ON visit (port_departure , year_departure);
+
+--CREATE INDEX array_index ON ship USING GIN(team);
+CREATE INDEX json_index_departure ON visit USING GIN(port_departure);
+CREATE INDEX json_index_arrival ON visit USING GIN(port_arrival);
+CREATE INDEX text_index ON cargo USING GIN(to_tsvector('russian', name_product));
+
+DROP TABLE visit_sections;
+
+CREATE TABLE visit_sections (
+  id integer NOT NULL,
+  port_departure JSONB NOT NULL,
+  date_departure timestamp DEFAULT localtimestamp NOT NULL,
+  year_departure int NOT NULL,
+  season_departure varchar(6) NOT NULL,
+  port_arrival JSONB NOT NULL,
+  date_arrival timestamp NOT NULL,
+  year_arrival int NOT NULL,
+  season_arrival varchar(6) NOT NULL,
+  id_ship int REFERENCES Ship(id) NOT NULL,
+  PRIMARY KEY (id, season_departure)
+) PARTITION BY RANGE (season_departure);
+  
+
+CREATE TABLE winter_visit PARTITION OF visit_sections
+    FOR VALUES FROM (1) TO (2);
+
+CREATE TABLE spring_visit PARTITION OF visit_sections
+    FOR VALUES FROM (2) TO (3);
+
+CREATE TABLE summer_visit PARTITION OF visit_sections
+    FOR VALUES FROM (3) TO (4);
+
+CREATE TABLE autumn_visit PARTITION OF visit_sections
+    FOR VALUES FROM (4) TO (5);
+	
+INSERT INTO visit_sections(id, port_departure, date_departure, year_departure, port_arrival, date_arrival, year_arrival, id_ship, season_departure, season_arrival)
+SELECT * FROM visit;
+
+SELECT * FROM visit_sections LIMIT 100;
+
+
+"Gather  (cost=1000.00..79230.63 rows=10133 width=535) (actual time=1.461..741.232 rows=10477 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Parallel Seq Scan on ship  (cost=0.00..77217.33 rows=4222 width=535) (actual time=3.221..721.965 rows=3492 loops=3)"
+"        Filter: ('{""DMITRY SOKOLOV""}'::text[] <@ team)"
+"        Rows Removed by Filter: 329841"
+"Planning Time: 0.183 ms"
+"Execution Time: 741.980 ms"

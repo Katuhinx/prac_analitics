@@ -1,0 +1,1 @@
+DROP TABLE Port, Berth, Ship, Visit, Cap, Cargo, Country, City,Product;

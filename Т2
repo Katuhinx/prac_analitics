@@ -1,0 +1,54 @@
+--1
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+BEGIN TRANSACTION;
+
+UPDATE Cargo SET weight=weight+100--3
+	WHERE id = '1';
+	
+SELECT * FROM Cargo--4
+	WHERE id = '1';
+	
+COMMIT;
+
+
+--2
+
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+BEGIN TRANSACTION;
+
+SELECT id_cap, experience FROM Cap;--2,7
+
+UPDATE Cap SET experience = experience +1;--10
+
+COMMIT;--12
+
+---------------------------------------
+
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+BEGIN TRANSACTION;
+
+SELECT id_cap, experience FROM Cap;--2,7
+
+
+COMMIT;--12
+
+------------------------------------------------
+
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+BEGIN TRANSACTION;
+
+SELECT * FROM Prod;
+
+SELECT SUM(weight) FROM Prod WHERE id_visit='3';
+
+INSERT INTO Prod (id_visit,name,weight)
+	VALUES
+		('1','одежда',150);
+
+COMMIT;
+

@@ -1,0 +1,74 @@
+--DROP TABLE Port, Berth, Ship, Visit, Cap, Cargo, Country, City;
+
+CREATE TYPE berth_t AS ENUM ('пирс', 'набережная','плавучий');
+CREATE TYPE ship_t AS ENUM ('сухогруз', 'танкер','контейнеровоз');
+
+
+CREATE TABLE Country(
+	id SERIAL PRIMARY KEY,
+	name varchar(100) NOT NULL
+);
+CREATE TABLE City(
+	id SERIAL PRIMARY KEY,
+	name varchar(100) NOT NULL
+);
+
+CREATE TABLE Port (
+  id SERIAL PRIMARY KEY,
+  name varchar(100) NOT NULL,
+  id_city int REFERENCES Cityh(id) NOT NULL,
+  id_country int REFERENCES Country(id) NOT NULL
+);
+
+
+
+--SELECT * FROM Port
+
+CREATE TABLE Berth (
+  id SERIAL PRIMARY KEY,
+  id_port int REFERENCES Port (id) ON DELETE CASCADE,
+  name varchar(100) NOT NULL,
+  type berth_t NOT NULL
+);
+
+CREATE TABLE Cap (
+  id_cap SERIAL PRIMARY KEY,
+  name_cap varchar(100) NOT NULL,
+  number char(11) NOT NULL,
+  passport char(10) NOT NULL UNIQUE,
+  experience int NOT NULL
+); 
+
+--SELECT * FROM Berth
+
+CREATE TABLE Ship (
+  id SERIAL PRIMARY KEY ,
+  name_ship varchar(100) NOT NULL,
+  type_sh ship_t NOT NULL,
+  max_weight real NOT NULL CONSTRAINT positive_max_weight CHECK (max_weight>0),
+  max_stock int NOT NULL
+
+);
+
+CREATE TABLE Visit (
+  id SERIAL PRIMARY KEY,
+  id_berth_departure int REFERENCES Berth(id) NOT NULL,
+  date_departure timestamp DEFAULT localtimestamp NOT NULL,
+  id_berth_arrival int REFERENCES Berth(id) NOT NULL,
+  date_arrival timestamp NOT NULL,
+  id_ship int REFERENCES Ship(id) NOT NULL,
+  id_cap int REFERENCES Cap (id_cap) NOT NULL
+);
+
+CREATE TABLE Cargo (
+  id SERIAL PRIMARY KEY,
+  id_visit int REFERENCES Visit(id) NOT NULL,
+  id_product int REFERENCES Product(id) NOT NULL,
+  weight real NOT NULL CONSTRAINT positive_weight CHECK (weight>0)
+);
+
+
+CREATE TABLE Product (
+  id SERIAL PRIMARY KEY,
+  name varchar(255) NOT NULL
+);

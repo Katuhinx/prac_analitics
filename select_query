@@ -1,0 +1,53 @@
+--Запрос 1
+-- Определить самый популярный товар который чаще всего вывозят из России за границу
+
+SELECT Product.name, Sum(Cargo.weight) AS Top_product
+  FROM Product
+  	JOIN Cargo ON Cargo.id_product=Product.id
+	JOIN Visit ON Visit.id=Cargo.id_visit
+	JOIN Berth AS bd ON bd.id=Visit.id_berth_departure
+	JOIN Berth AS ba ON ba.id=Visit.id_berth_arrival
+	JOIN Port AS pb ON pb.id=bd.id_port
+	JOIN Port AS pa ON pa.id=ba.id_port
+	JOIN Country AS cb ON cb.id=pb.id_country
+	JOIN Country AS ca ON ca.id=pa.id_country
+  WHERE cb.name = 'Россия' AND ca.name != 'Россия'
+  GROUP BY Product.name
+  ORDER BY Top_product DESC
+  LIMIT 1
+
+--Запрос 2
+--Вывести информацию о судах, которые сейчас находятся в море
+
+SELECT Ship.name_ship, Ship.type_sh, Cap.name_cap, Product.name AS product_name,date_departure,date_arrival
+	FROM Visit
+		LEFT JOIN Ship ON Visit.id_ship=Ship.id
+	    LEFT JOIN CAP ON Visit.id_cap=Cap.id_cap
+		LEFT JOIN Cargo ON Visit.id=Cargo.id_visit
+		LEFT JOIN Product ON Cargo.id_product=Product.id
+	WHERE Visit.date_departure<CURRENT_TIMESTAMP AND Visit.date_arrival>CURRENT_TIMESTAMP
+	ORDER BY Ship.name_ship
+
+--Запрос 3
+--Вычислить, сколько еще тонн нефти можно загрузить на каждый танкер, который сейчас в рейсе
+
+SELECT (Ship.max_weight-Cargo.weight) AS Weight,Ship.name_ship 
+	FROM Visit
+		 JOIN Ship ON Visit.id_ship=Ship.id
+	     JOIN CAP ON Visit.id_cap=Cap.id_cap
+		LEFT JOIN Cargo ON Visit.id=Cargo.id_visit
+		LEFT JOIN Product ON Cargo.id_product=Product.id
+	WHERE Product.name='нефть' AND Visit.date_departure<CURRENT_TIMESTAMP AND Visit.date_arrival>CURRENT_TIMESTAMP
+	
+--Запрос 4
+--Получить список портов России, из которых отправлялись суда и количество рейсов за заданный период времени :
+
+SELECT DISTINCT Port.name, COUNT(Visit.id) as Visits_count
+	FROM Port
+		INNER JOIN Berth ON Port.id = Berth.id_port
+		INNER JOIN Visit ON Berth.id = Visit.id_berth_departure
+		INNER JOIN Country ON Port.id_country = country.id
+	WHERE Country.name = 'Россия'
+		AND Visit.date_departure >= '2023-01-01'
+		AND Visit.date_departure <= '2023-12-31'
+	GROUP BY Port.id	

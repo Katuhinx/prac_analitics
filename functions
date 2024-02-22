@@ -1,0 +1,92 @@
+
+SET search_path=analitics;
+
+--Функция, которая выдаёт расписание  рейсов  для определенных кораблей
+CREATE OR REPLACE FUNCTION ship_departure_visit(ship integer) RETURNS table(departure timestamp, city jsonb) AS $$
+DECLARE
+    curs CURSOR FOR SELECT * FROM visit;
+    exist bool = FALSE;
+BEGIN
+    FOR r in curs LOOP
+        IF r.id_ship = $1 THEN
+            RETURN QUERY SELECT  r.date_departure, r.port_departure;
+            exist = TRUE;
+        END IF;
+    END LOOP;
+    IF NOT exist THEN
+        RAISE EXCEPTION 'Неправильный номер корабля или расписание еще не вбиты в систему.';
+    END IF;
+    RETURN;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT * FROM ship_departure_visit('5') ORDER BY departure;
+SELECT * FROM ship_departure_visit('10000000');
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------
+--функция, которая выдает, какое количество и какого груза было привезено  определенным кораблем
+
+CREATE OR REPLACE FUNCTION product_year(ship integer, year integer) RETURNS table(product text, weight bigint) AS $$
+DECLARE
+	curs CURSOR FOR SELECT * FROM visit JOIN cargo ON visit.id = cargo.id_visit WHERE (ship = visit.id_ship) AND (year = year_arrival);
+    exist bool = FALSE;
+	
+BEGIN
+    FOR r in curs LOOP
+   
+            RETURN QUERY SELECT r.name_product, SUM((r.data_product -> 'weight')::int) GROUP BY r.name_product;
+            exist = TRUE;
+       
+    END LOOP;
+    IF NOT exist THEN
+        RAISE EXCEPTION 'Либо вам ничего не привозили в этом году, либо вы дали неправильную информацию о себе';
+    END IF;
+    RETURN;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT * FROM product_year(627697, 2014);
+SELECT * FROM visit LIMIT 10 JOIN cargo ON visit.id = cargo.id_visit  WHERE name_product = 'Продукт 215033' LIMIT 100
+
+INSERT INTO cargo ( id_visit, category_product, name_product, data_product)
+VALUES (1,' Автомобили', 'Продукт 215033', '{"weight" :"20000000"}')
+
+
+-- порт, год, сутки 
+
+SELECT jsonb_each_text (cargo.data_product), name_product FROM cargo LIMIT 10;
+
+
+CREATE OR REPLACE FUNCTION port_statistik ( city text, port text, year integer, product text) RETURNS TABLES (weight int , year integer) AS $$
+
+DECLARE curs CURSOR FOR SELECT * FROM visit JOIN cargo ON visit.id = cargo.id_visit WHERE (city = port_departure -> 'City'::text) AND (port = port_departure -> 'Port'::text) 
+
+		AND (year = year_departure) AND (product = name_product);
+		exist bool = FALSE;
+		sum cargo.date_product%TYPE := SUM((r.data_product -> 'weight')::int);
+				
+		BEGIN
+			FOR r IN curs LOOP
+			 RETURN QUERY SELECT sum, year;
+			 exist = TRUE;
+       
+    END LOOP;
+    IF NOT exist THEN
+        RAISE EXCEPTION 'в этом порту в этом промежутке времени не было завозов товара';
+    END IF;
+    RETURN;
+END;
+$$
+LANGUAGE plpgsql;
+			
+
+
+SELECT jsonb_extract_path_text (cargo.data_product), name_product FROM cargo LIMIT 10;
+
+SELECT json_array_elements (cargo.data_product -> 'weight'::integer), name_product FROM cargo	
+
+SELECT * FROM cargo LIMIT 10

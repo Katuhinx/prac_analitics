@@ -1,0 +1,75 @@
+--грязное чтение,для uncommited будет так же, потому что в postgres read uncommited работает как read commited
+
+--потерянные обновления, блокируется любым уровнем изоляции
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+BEGIN TRANSACTION;
+
+SELECT * FROM Cargo--1
+	WHERE id = '1';
+	
+UPDATE Cargo SET weight=weight+100 --2
+	WHERE id = '1';
+	
+SELECT * FROM Cargo--2
+	WHERE id = '1';
+	
+COMMIT;
+
+--2
+--неповторяющиеся чтения
+
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+BEGIN TRANSACTION;
+
+SELECT id_cap, experience FROM Cap;--1
+
+UPDATE Cap SET experience = experience +1;--5
+
+SELECT id_cap, experience FROM Cap;--6
+
+COMMIT;--9
+
+---------------------------------------
+--неповторяющиеся чтения и фантомные чтения
+--Снова вывелось то же самое, несмотря на INSERT, потому что в postgresql на уровне REPEATABLE READ есть защита от фантомных чтений
+
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+
+BEGIN TRANSACTION;
+
+SELECT id_cap, experience FROM Cap;--1
+
+UPDATE Cap SET experience = experience +1;--5
+
+SELECT id_cap, experience FROM Cap;--6
+
+INSERT INTO Cap (name_cap, number,passport,experience) 
+	VALUES
+		('Никитенко Никита Никитович',89992309382,9820812738,50),
+		('Анатольев Анатолий Анатольевич',89283729018,9820019287,79);
+
+COMMIT;--9
+
+
+--
+SELECT Cargo.id_visit, Product.name, Cargo.weight INTO Prod
+	FROM Cargo INNER JOIN Product ON Cargo.id_product=Product.id;
+SELECT * FROM prod;
+
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+BEGIN TRANSACTION;
+
+SELECT SUM(weight) FROM Prod WHERE id_visit='1';
+		
+INSERT INTO Prod (id_visit,name,weight)
+	VALUES
+		('3','одежда',50);
+	
+COMMIT;	
+	
+
+

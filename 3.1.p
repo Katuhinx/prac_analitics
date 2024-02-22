@@ -1,0 +1,13 @@
+SET search_path TO analitics;
+
+SELECT COUNT(*) FROM Ship;
+
+SELECT COUNT(*) FROM Visit;
+
+SELECT COUNT(*) FROM Cargo;
+
+SELECT * FROM Ship LIMIT 100;
+
+SELECT * FROM Visit LIMIT 100;
+
+SELECT * FROM Cargo LIMIT 100;

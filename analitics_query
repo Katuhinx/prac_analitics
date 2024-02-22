@@ -1,0 +1,219 @@
+SELECT * FROM pg_roles;
+
+--SET search_path=analitics;
+
+SHOW search_path;
+
+CREATE USER test PASSWORD '12345678';
+
+GRANT USAGE ON SCHEMA analitics TO test
+
+GRANT SELECT, INSERT,UPDATE ON visit TO test;
+
+GRANT SELECT (category_product,name_product,data_product),UPDATE (id_visit) ON cargo TO test;
+
+GRANT SELECT ON ship TO test;
+
+--SELECT * FROM cargo LIMIT 10;
+--SELECT * FROM visit LIMIT 10;
+--SELECT * FROM ship LIMIT 10;
+
+-- Какое каличество и какого продукта было экспортировано из определенного города
+CREATE VIEW weight_departure AS
+SELECT port_departure -> 'city' AS city, year_departure, name_product, SUM((data_product -> 'weight')::int) as weight
+	FROM visit JOIN cargo ON visit.id=cargo.id_visit 
+	--WHERE port_departure @> '{"city":"Murmansk"}'::jsonb
+		GROUP BY name_product, port_departure, year_departure
+		ORDER BY city,year_departure;
+
+
+-- Какое каличество и какого продукта было импортировано из определенного города
+CREATE VIEW weight_arrival AS
+SELECT port_arrival -> 'city' AS city, year_arrival, name_product, SUM((data_product -> 'weight')::int) as weight
+	FROM visit JOIN cargo ON visit.id=cargo.id_visit 
+		GROUP BY name_product, port_arrival, year_arrival
+		ORDER BY city,year_arrival;
+		
+		
+SELECT * FROM weight_departure;
+
+SELECT * FROM weight_arrival;
+
+--Какое количество кораблей приплывало в определенный порт за определенный год(проходимость порта)
+ CREATE VIEW port_visit AS
+ 	SELECT port_departure -> 'city' AS city, port_departure -> 'port' AS port, year_departure, COUNT(ship.id)
+		FROM visit JOIN ship ON visit.id_ship=ship.id
+		GROUP BY city,port,year_departure
+		ORDER BY city, year_departure;
+			
+SELECT * FROM port_visit;
+
+--Сколько времени в пути был определенный корабль(чтоб понимать когда отправлять корабль на техническое обслуживание)
+
+CREATE VIEW Ship_days AS
+  SELECT id_ship, SUM(DATE_PART('day', (date_arrival::timestamp - date_departure::timestamp)::interval)) 
+  FROM visit
+  WHERE year_departure = DATE_PART('year',now())
+  GROUP BY id_ship
+  
+  
+SELECT * FROM ship_days;
+
+
+SET ROLE postgres;
+
+
+---------------------------------------------
+
+CREATE VIEW ship_1 AS
+  SELECT id, max_stock, max_weight, team FROM ship WHERE max_stock > 90000
+  WITH CHECK OPTION;
+  
+DROP VIEW ship_1
+  
+INSERT INTO ship_1 (id,max_stock,max_weight, team)
+	--VALUES ('1000000000','120890','120000','{1}');
+	VALUES ('100000000',1,1,'{2}');
+	
+SELECT * FROM ship_1 WHERE id=1000000000;
+
+
+
+
+--Все рейсы на ближайшие 7 дней(для получения информации о билжайших рейсах)
+
+CREATE VIEW visit_next_week AS
+SELECT visit.id, date_departure, port_departure
+	FROM visit
+	WHERE date_departure >= (now() + interval '1 day') AND date_departure <= (now() + interval '7 day');
+
+SELECT * FROM visit_next_week;
+
+GRANT SELECT ON weight_arrival, weight_departure TO test;
+
+CREATE ROLE test2;
+
+GRANT USAGE ON SCHEMA analitics TO test2;
+
+GRANT SELECT, UPDATE (date_departure) ON visit_next_week TO test2;
+
+GRANT test2 TO test;
+
+SET ROLE test;
+
+ALTER ROLE test WITH PASSWORD '00000000';
+
+SELECT CURRENT_USER;
+
+UPDATE ship SET max_stock = 1 WHERE max_stock = 95879; -- net dostupa
+
+SELECT * FROM ship LIMIT 10; -- est` dostup
+
+SELECT * FROM ship_days; -- net dostupa
+
+SELECT * FROM weight_arrival LIMIT 10; -- est` dostup
+
+UPDATE visit_next_week SET id = 470887 WHERE id = 470899;-- net dostupa
+
+UPDATE visit_next_week SET date_departure = make_date(2023, 12, 16) WHERE id = 470899--est` dostup iz-za test2
+
+SELECT * FROM visit_next_week LIMIT 10;--est` dostup
+
+SELECT table_catalog, table_schema, table_name, privilege_type
+FROM information_schema.table_privileges
+WHERE grantee = 'test1';
+
+
+
+
+
+SET ROLE test2;
+
+UPDATE ship SET max_stock = 1 WHERE max_stock = 95879; -- net dostupa
+
+SELECT * FROM ship LIMIT 10; -- net dostupa
+
+SELECT * FROM ship_days; -- net dostupa
+
+SELECT * FROM weight_arrival LIMIT 10; -- net dostupa
+
+UPDATE visit_next_week SET id = 470887 WHERE id = 470899;-- net dostupa
+
+UPDATE visit_next_week SET date_departure = make_date(2023, 12, 16) WHERE id = 470899--est` dostup
+
+SELECT * FROM visit_next_week LIMIT 10;--est` dostup
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+SET search_path=analitics;
+
+--Функция, которая выдаёт расписание  рейсов  для определенных кораблей
+CREATE OR REPLACE FUNCTION ship_departure_visit(ship integer) RETURNS table(departure timestamp, city jsonb) AS $$
+DECLARE
+    curs CURSOR FOR SELECT * FROM visit;
+    exist bool = FALSE;
+BEGIN
+    FOR r in curs LOOP
+        IF r.id_ship = $1 THEN
+            RETURN QUERY SELECT  r.date_departure, r.port_departure;
+            exist = TRUE;
+        END IF;
+    END LOOP;
+    IF NOT exist THEN
+        RAISE EXCEPTION 'Неправильный номер корабля или расписание еще не вбиты в систему.';
+    END IF;
+    RETURN;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT * FROM ship_departure_visit('5') ORDER BY departure;
+SELECT * FROM ship_departure_visit('10000000');
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------
+--функция, которая выдает, какое количество и какого груза было привезено в определенным кораблем
+
+CREATE OR REPLACE FUNCTION product_year(ship integer, year integer) RETURNS table(product text, weight bigint) AS $$
+DECLARE
+	curs CURSOR FOR SELECT * FROM visit JOIN cargo ON visit.id = cargo.id_visit WHERE (ship = visit.id_ship) AND (year = year_arrival);
+    exist bool = FALSE;
+	
+	--cur_id integer;
+BEGIN
+    FOR r in curs LOOP
+      --  FOREACH cur_id IN ARRAY r.examiners_ids LOOP
+            RETURN QUERY SELECT name_product, SUM((data_product -> 'weight')::integer) FROM  visit JOIN cargo ON visit.id = cargo.id_visit GROUP BY name_product;
+            exist = TRUE;
+       -- END LOOP;
+    END LOOP;
+    IF NOT exist THEN
+        RAISE EXCEPTION 'Либо вам ничего не привозили в этом году, либо вы дали неправильную информацию о себе';
+    END IF;
+    RETURN;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT name_product, (data_product -> 'weight')::integer as sum_weight FROM cargo LIMIT 10;
+
+SELECT * FROM product_year(1, 2002);
+SELECT * FROM visit WHERE id=1 LIMIT 5;
+SELECT * FROM cargo WHERE id_visit = 1
+
+SELECT * FROM visit JOIN cargo ON visit.id = cargo.id_visit WHERE year_arrival = 2014

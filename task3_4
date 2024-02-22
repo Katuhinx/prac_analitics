@@ -1,0 +1,41 @@
+SET search_path TO analitics;
+
+SELECT *
+FROM pg_indexes
+WHERE schemaname = 'analitics';
+
+ALTER TABLE ship
+DROP CONSTRAINT ship_pkey;
+
+ALTER TABLE visit
+DROP CONSTRAINT visit_pkey;
+
+ALTER TABLE cargo
+DROP CONSTRAINT cargo_pkey;
+
+DROP INDEX IF EXISTS public.ship_index;
+DROP INDEX IF EXISTS public.visit_index;
+DROP INDEX IF EXISTS public.cargo_index;
+
+
+
+--Какое количество кораблей приплывало в определенный город за текущий год(проходимость порта)
+EXPLAIN ANALYZE SELECT port_arrival -> 'city' AS city, port_arrival -> 'port' AS port, COUNT(id_ship)
+FROM visit 
+WHERE port_arrival @> '{"city":"Murmansk"}'::jsonb AND year_arrival = EXTRACT(YEAR FROM CURRENT_DATE)
+	GROUP BY city,port,year_arrival
+	ORDER BY city, year_arrival;
+			
+-- Какое каличество и какого продукта было экспортировано из определенного города за прошлый год
+EXPLAIN ANALYZE SELECT port_departure -> 'city' AS city, name_product, SUM((data_product -> 'weight')::int) as weight
+FROM visit JOIN cargo ON visit.id=cargo.id_visit 
+WHERE port_departure @> '{"city":"Murmansk"}'::jsonb AND year_departure = EXTRACT(YEAR FROM CURRENT_DATE) - 1
+	GROUP BY name_product, port_departure, year_departure
+	ORDER BY city,year_departure;
+	
+CREATE INDEX idx_port_arrival ON visit (port_arrival, year_arrival);
+
+CREATE INDEX idx_port_departure ON visit (port_departure , year_departure);
+CREATE INDEX idx_year_departure ON visit USING btree(year_departure);
+
+CREATE INDEX idx_name_product ON cargo USING btree(name_product);

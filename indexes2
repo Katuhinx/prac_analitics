@@ -1,0 +1,270 @@
+SELECT *
+FROM pg_indexes
+WHERE schemaname = 'public';
+
+DROP  INDEX idx_port_arrival,idx_port_departure,json_index_departure, json_index_arrival,text_index,array_team_index,array_index
+DROP TABLE visit_sections;
+
+-- индекс по выражению
+
+CREATE INDEX lower_index 
+
+--массив 
+
+EXPLAIN ANALYZE SELECT * FROM ship WHERE ARRAY['VADIM ERMAKOV']::text[] <@ team;
+
+/*
+"Gather  (cost=1000.00..78499.03 rows=2817 width=535) (actual time=0.239..1215.704 rows=5149 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Parallel Seq Scan on ship  (cost=0.00..77217.33 rows=1174 width=535) (actual time=1.347..1167.753 rows=1716 loops=3)"
+"        Filter: ('{""VADIM ERMAKOV""}'::text[] <@ team)"
+"        Rows Removed by Filter: 331617"
+"Planning Time: 0.256 ms"
+"Execution Time: 1216.443 ms"
+*/
+
+CREATE INDEX array_index ON ship USING GIN(team);
+
+EXPLAIN ANALYZE SELECT * FROM ship WHERE ARRAY['OLEG LAPIN']::text[] <@ team;
+
+/*
+"Bitmap Heap Scan on ship  (cost=39.98..9503.52 rows=2817 width=535) (actual time=2.361..105.144 rows=5394 loops=1)"
+"  Recheck Cond: ('{""OLEG LAPIN""}'::text[] <@ team)"
+"  Heap Blocks: exact=5177"
+"  ->  Bitmap Index Scan on array_index  (cost=0.00..39.28 rows=2817 width=0) (actual time=0.842..0.843 rows=5394 loops=1)"
+"        Index Cond: (team @> '{""OLEG LAPIN""}'::text[])"
+"Planning Time: 0.308 ms"
+"Execution Time: 105.467 ms"
+*/
+
+--json
+
+EXPLAIN ANALYZE SELECT port_arrival -> 'city' AS city, port_arrival -> 'port' AS port, COUNT(id_ship)
+FROM visit 
+WHERE port_arrival @> '{"city":"Murmansk"}'::jsonb AND year_arrival = EXTRACT(YEAR FROM CURRENT_DATE)
+	GROUP BY city,port,year_arrival
+	ORDER BY city, year_arrival;
+	
+/*
+"              ->  Sort  (cost=35695.22..35695.24 rows=10 width=72) (actual time=444.126..444.131 rows=114 loops=3)"
+"                    Sort Key: ((port_arrival -> 'city'::text)), year_arrival, ((port_arrival -> 'port'::text))"
+"                    Sort Method: quicksort  Memory: 33kB"
+"                    Worker 0:  Sort Method: quicksort  Memory: 31kB"
+"                    Worker 1:  Sort Method: quicksort  Memory: 31kB"
+"                    ->  Parallel Seq Scan on visit  (cost=0.00..35695.05 rows=10 width=72) (actual time=4.268..443.432 rows=114 loops=3)"
+"                          Filter: ((port_arrival @> '{""city"": ""Murmansk""}'::jsonb) AND ((year_arrival)::numeric = EXTRACT(year FROM CURRENT_DATE)))"
+"                          Rows Removed by Filter: 333219"
+"Planning Time: 4.468 ms"
+"Execution Time: 458.980 ms"
+*/
+
+CREATE INDEX json_index_arrival ON visit USING GIN(port_arrival);
+
+EXPLAIN ANALYZE SELECT port_arrival -> 'city' AS city, port_arrival -> 'port' AS port, COUNT(id_ship)
+FROM visit 
+WHERE port_arrival @> '{"city":"Murmansk"}'::jsonb AND year_arrival = EXTRACT(YEAR FROM CURRENT_DATE)
+	GROUP BY city,port,year_arrival
+	ORDER BY city, year_arrival;
+	
+/*
+"        Sort Method: quicksort  Memory: 46kB"
+"        ->  Bitmap Heap Scan on visit  (cost=110.01..11972.82 rows=23 width=72) (actual time=4.798..29.002 rows=342 loops=1)"
+"              Recheck Cond: (port_arrival @> '{""city"": ""Murmansk""}'::jsonb)"
+"              Filter: ((year_arrival)::numeric = EXTRACT(year FROM CURRENT_DATE))"
+"              Rows Removed by Filter: 7162"
+"              Heap Blocks: exact=6563"
+"              ->  Bitmap Index Scan on json_index_arrival  (cost=0.00..110.00 rows=4560 width=0) (actual time=4.103..4.104 rows=7504 loops=1)"
+"                    Index Cond: (port_arrival @> '{""city"": ""Murmansk""}'::jsonb)"
+"Planning Time: 0.220 ms"
+"Execution Time: 29.567 ms"
+*/
+
+--несколько таблиц и несколько полей
+
+EXPLAIN ANALYZE SELECT port_departure -> 'city' AS city, port_arrival -> 'city' AS city2, name_product, id_ship, year_departure
+FROM visit JOIN cargo ON visit.id=cargo.id_visit 
+WHERE id_ship = 862188 AND year_departure = 2021;
+	
+	
+/*
+"Gather  (cost=33570.01..536891.63 rows=20 width=93) (actual time=4614.211..4755.629 rows=12 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Parallel Hash Join  (cost=32570.01..535889.63 rows=8 width=93) (actual time=4565.900..4566.297 rows=4 loops=3)"
+"        Hash Cond: (cargo.id_visit = visit.id)"
+"        ->  Parallel Seq Scan on cargo  (cost=0.00..481444.67 rows=8333267 width=25) (actual time=0.671..3135.008 rows=6666613 loops=3)"
+"        ->  Parallel Hash  (cost=32570.00..32570.00 rows=1 width=138) (actual time=924.435..924.439 rows=0 loops=3)"
+"              Buckets: 1024  Batches: 1  Memory Usage: 40kB"
+"              ->  Parallel Seq Scan on visit  (cost=0.00..32570.00 rows=1 width=138) (actual time=704.468..924.266 rows=0 loops=3)"
+"                    Filter: ((id_ship = 862188) AND (year_departure = 2021))"
+"                    Rows Removed by Filter: 333333"
+"Planning Time: 0.298 ms"
+"JIT:"
+"  Functions: 39"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 8.085 ms, Inlining 226.860 ms, Optimization 320.566 ms, Emission 236.051 ms, Total 791.562 ms"
+"Execution Time: 4761.824 ms"
+*/
+
+CREATE INDEX json_index_departure ON visit (id_ship, year_departure);
+
+EXPLAIN ANALYZE SELECT port_departure -> 'city' AS city, port_arrival -> 'city' AS city2, name_product, id_ship, year_departure
+FROM visit JOIN cargo ON visit.id=cargo.id_visit 
+WHERE id_ship = 862188 AND year_departure = 2021;
+	
+
+/*
+"Gather  (cost=1008.46..504330.08 rows=20 width=93) (actual time=4064.100..4106.742 rows=12 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Hash Join  (cost=8.46..503328.08 rows=8 width=93) (actual time=4015.637..4016.208 rows=4 loops=3)"
+"        Hash Cond: (cargo.id_visit = visit.id)"
+"        ->  Parallel Seq Scan on cargo  (cost=0.00..481444.67 rows=8333267 width=25) (actual time=3.807..3264.283 rows=6666613 loops=3)"
+"        ->  Hash  (cost=8.45..8.45 rows=1 width=138) (actual time=284.452..284.457 rows=1 loops=3)"
+"              Buckets: 1024  Batches: 1  Memory Usage: 9kB"
+"              ->  Index Scan using json_index_departure on visit  (cost=0.42..8.45 rows=1 width=138) (actual time=284.419..284.428 rows=1 loops=3)"
+"                    Index Cond: ((id_ship = 862188) AND (year_departure = 2021))"
+"Planning Time: 4.937 ms"
+"JIT:"
+"  Functions: 39"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 7.539 ms, Inlining 213.158 ms, Optimization 368.508 ms, Emission 269.647 ms, Total 858.852 ms"
+"Execution Time: 4112.889 ms"
+*/
+
+--секционирование
+
+EXPLAIN ANALYZE SELECT * FROM visit WHERE season_departure = 1;
+
+/*
+"Seq Scan on visit  (cost=0.00..38820.00 rows=249267 width=166) (actual time=1.180..604.982 rows=250685 loops=1)"
+"  Filter: (season_departure = 1)"
+"  Rows Removed by Filter: 749315"
+"Planning Time: 6.590 ms"
+"Execution Time: 612.295 ms"
+*/
+
+CREATE TABLE visit_sections (
+  id integer NOT NULL,
+  port_departure JSONB NOT NULL,
+  date_departure timestamp DEFAULT localtimestamp NOT NULL,
+  year_departure int NOT NULL,
+  season_departure int NOT NULL,
+  port_arrival JSONB NOT NULL,
+  date_arrival timestamp NOT NULL,
+  year_arrival int NOT NULL,
+  season_arrival int NOT NULL,
+  id_ship int REFERENCES Ship(id) NOT NULL,
+  PRIMARY KEY (id, season_departure)
+) PARTITION BY RANGE (season_departure);
+
+CREATE TABLE winter_visit PARTITION OF visit_sections
+    FOR VALUES FROM (1) TO (2);
+
+CREATE TABLE spring_visit PARTITION OF visit_sections
+    FOR VALUES FROM (2) TO (3);
+
+CREATE TABLE summer_visit PARTITION OF visit_sections
+    FOR VALUES FROM (3) TO (4);
+
+CREATE TABLE autumn_visit PARTITION OF visit_sections
+    FOR VALUES FROM (4) TO (5);
+
+INSERT INTO visit_sections(id, port_departure, date_departure, year_departure, port_arrival, date_arrival, year_arrival, id_ship, season_departure, season_arrival)
+SELECT * FROM visit;
+
+EXPLAIN ANALYZE SELECT * FROM visit_sections WHERE season_departure = 1;
+
+/*
+"Gather  (cost=1000.00..9666.33 rows=1961 width=104) (actual time=2.147..57.732 rows=250685 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Parallel Seq Scan on winter_visit visit_sections  (cost=0.00..8470.23 rows=817 width=104) (actual time=0.139..32.251 rows=83562 loops=3)"
+"        Filter: (season_departure = 1)"
+"Planning Time: 3.832 ms"
+"Execution Time: 63.417 ms"
+*/
+
+--полнотекстовый поиск
+EXPLAIN ANALYZE SELECT name_product FROM cargo
+WHERE to_tsvector('russian', name_product) @@ to_tsquery('russian', '881426 | 429856');
+
+/*
+"Gather  (cost=1000.00..2606544.30 rows=199498 width=21) (actual time=174.725..14949.415 rows=46 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Parallel Seq Scan on cargo  (cost=0.00..2585594.50 rows=83124 width=21) (actual time=474.243..14919.361 rows=15 loops=3)"
+"        Filter: (to_tsvector('russian'::regconfig, name_product) @@ '''881426'' | ''429856'''::tsquery)"
+"        Rows Removed by Filter: 6666598"
+"Planning Time: 0.081 ms"
+"JIT:"
+"  Functions: 12"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 4.005 ms, Inlining 232.790 ms, Optimization 120.291 ms, Emission 124.462 ms, Total 481.548 ms"
+"Execution Time: 15174.952 ms"
+*/
+
+CREATE INDEX text_index ON cargo USING GIN(to_tsvector('russian', name_product));
+
+EXPLAIN ANALYZE SELECT name_product FROM cargo
+WHERE to_tsvector('russian', name_product) @@ to_tsquery('russian', '881426 | 429856');
+
+/*
+"Gather  (cost=2387.07..2100138.11 rows=199498 width=21) (actual time=152.518..196.648 rows=46 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Parallel Bitmap Heap Scan on cargo  (cost=1387.07..2079188.31 rows=83124 width=21) (actual time=50.773..52.942 rows=15 loops=3)"
+"        Recheck Cond: (to_tsvector('russian'::regconfig, name_product) @@ '''881426'' | ''429856'''::tsquery)"
+"        Heap Blocks: exact=45"
+"        ->  Bitmap Index Scan on text_index  (cost=0.00..1337.20 rows=199498 width=0) (actual time=0.248..0.248 rows=46 loops=1)"
+"              Index Cond: (to_tsvector('russian'::regconfig, name_product) @@ '''881426'' | ''429856'''::tsquery)"
+"Planning Time: 7.342 ms"
+"JIT:"
+"  Functions: 12"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 18.335 ms, Inlining 23.836 ms, Optimization 80.084 ms, Emission 47.262 ms, Total 169.517 ms"
+"Execution Time: 212.351 ms"
+*/
+
+-- индекс по выражению
+
+EXPLAIN ANALYZE SELECT * FROM cargo 
+WHERE lower(name_product) = 'продукт 881426';
+
+/*
+"Gather  (cost=1000.00..534010.60 rows=99969 width=127) (actual time=376.655..5496.589 rows=23 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Parallel Seq Scan on cargo  (cost=0.00..523013.70 rows=41654 width=127) (actual time=384.320..5425.702 rows=8 loops=3)"
+"        Filter: (lower(name_product) = 'продукт 881426'::text)"
+"        Rows Removed by Filter: 6666606"
+"Planning Time: 0.081 ms"
+"JIT:"
+"  Functions: 6"
+"  Options: Inlining true, Optimization true, Expressions true, Deforming true"
+"  Timing: Generation 2.072 ms, Inlining 303.978 ms, Optimization 52.799 ms, Emission 35.351 ms, Total 394.199 ms"
+"Execution Time: 5498.082 ms"
+*/
+
+CREATE INDEX lower_index ON cargo(lower(name_product));
+
+EXPLAIN ANALYZE SELECT * FROM cargo 
+WHERE lower(name_product) = 'продукт 881426';
+
+/* 
+"Gather  (cost=2211.43..320784.62 rows=99999 width=127) (actual time=3.689..235.944 rows=23 loops=1)"
+"  Workers Planned: 2"
+"  Workers Launched: 2"
+"  ->  Parallel Bitmap Heap Scan on cargo  (cost=1211.43..309784.72 rows=41666 width=127) (actual time=0.922..0.930 rows=8 loops=3)"
+"        Recheck Cond: (lower(name_product) = 'продукт 881426'::text)"
+"        Heap Blocks: exact=23"
+"        ->  Bitmap Index Scan on lower_index  (cost=0.00..1186.43 rows=99999 width=0) (actual time=2.655..2.656 rows=23 loops=1)"
+"              Index Cond: (lower(name_product) = 'продукт 881426'::text)"
+"Planning Time: 5.225 ms"
+"JIT:"
+"  Functions: 6"
+"  Options: Inlining false, Optimization false, Expressions true, Deforming true"
+"  Timing: Generation 12.389 ms, Inlining 0.000 ms, Optimization 0.000 ms, Emission 0.000 ms, Total 12.389 ms"
+"Execution Time: 248.832 ms"
+*/

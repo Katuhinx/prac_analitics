@@ -1,0 +1,41 @@
+--2
+
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+BEGIN TRANSACTION;
+
+SELECT id_cap, experience FROM Cap;--3
+
+UPDATE Cap SET experience = experience -1;--11
+
+COMMIT;
+
+----------------------------
+
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+BEGIN TRANSACTION;
+
+SELECT * FROM Vis;
+		
+
+	
+COMMIT;	
+
+---1
+--SELECT Cargo.id_visit, Product.name, Cargo.weight INTO Prod
+	FROM Cargo INNER JOIN Product ON Cargo.id_product=Product.id;
+SELECT * FROM prod;
+
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+BEGIN TRANSACTION;
+
+SELECT SUM(weight) FROM Prod WHERE id_visit='1';
+		
+INSERT INTO Prod (id_visit,name,weight)
+	VALUES
+		('3','одежда',50);
+	
+COMMIT;	
+	
